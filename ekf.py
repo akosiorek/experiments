@@ -5,12 +5,29 @@ import quaternion as quat
 from quaternion import norm2
 
 
+def fd_approx(foo, wrt, *args):
+    eps = 1e-6
+    y = foo(wrt, *args)
+    J = np.zeros((y.size, wrt.size))
+
+    w = wrt.ravel()
+    for i in xrange(wrt.size):
+        w[i] += eps
+        yp = foo(w.reshape(wrt.shape), *args)
+        w[i] -= 2 * eps
+        ym = foo(w.reshape(wrt.shape), *args)
+        w[i] += eps
+        J[:, i] = (yp - ym) / (2 * eps)
+
+    return J
+
+
 def extract(x):
     return x[:4], x[4:7], x[7:]
 
 
 def f(x, dt):
-    p, w, e = extract(x)
+    p, w, e = extract(x.copy())
 
     v = dt * w + dt ** 2 * e / 2
     q = quat.q_from_omega(v)
@@ -18,8 +35,6 @@ def f(x, dt):
     p = quat.prod(q, p)
     w += dt * e
     return np.concatenate((p, w, e))
-
-
 
 
 def f_qw(x, dt):
@@ -35,20 +50,28 @@ def f_qw(x, dt):
     return np.vstack((q0w.T, qw))
 
 
-def f_qw_approx(x, dt, eps=1e-4):
+def v_from_state(x, dt):
     p, w, e = extract(x)
+    v = dt * w + dt ** 2 * e / 2
+    return quat.q_from_omega(v)
 
-    def q(ww):
-        v = dt * ww + dt ** 2 * e / 2
-        return quat.q_from_omega(v)
 
-    dq = np.zeros((4, 3))
-    for i in xrange(w.size):
-        wp, wm = w.copy(), w.copy()
-        wp[i] += eps
-        wm[i] -= eps
-        dq[:, i] = (q(wp) - q(wm)) / (2 * eps)
-    return dq
+def dq_dv_approx(x, dt):
+    p, w, e = extract(x.copy())
+    v = dt * w + dt ** 2 * e / 2
+    return fd_approx(quat.q_from_omega, v)
+
+
+def cross_approx(x, dt):
+    p, w, e = extract(x.copy())
+    v = dt * w + dt ** 2 * e / 2
+
+    def f(v, p):
+        p = p[1:]
+        q = quat.q_from_omega(v)[1:]
+        return np.cross(q, p)
+
+    return fd_approx(f, v, p)
 
 
 def Jf(x, dt):
@@ -69,36 +92,27 @@ def Jf(x, dt):
     v, p = v[:, np.newaxis], p[:, np.newaxis]
     v_norm = norm2(v)
     theta = v_norm / 2
-    q0w = - 0.5 * dt / v_norm * sin(theta) * v
-    qw = dt / v_norm ** 2 * (sin(theta) * (v_norm * np.eye(3) - v.dot(v.T) / v_norm) + 0.5 * cos(theta) * v.dot(v.T))
+    q0dv = - 0.5 / v_norm * sin(theta) * v.T
+    qdv = (sin(theta) * (v_norm * np.eye(3) - v.dot(v.T) / v_norm) + 0.5 * cos(theta) * v.dot(v.T)) / v_norm ** 2
 
-    dcross_dw = np.asarray(((qw[1] * p[3] - qw[2] * p[2]).T,
-                            (qw[2] * p[1] - qw[0] * p[3]).T,
-                            (qw[0] * p[2] - qw[1] * p[1]).T))
+    dcross_dv = np.asarray(((qdv[1] * p[3] - qdv[2] * p[2]).T,
+                            (qdv[2] * p[1] - qdv[0] * p[3]).T,
+                            (qdv[0] * p[2] - qdv[1] * p[1]).T))
 
-    dp_dw_part1 = p[0] * q0w - qw.dot(p[1:])
-    dp_dw_part2 = q0w.T.dot(p[1:]) + p[0] * qw + dcross_dw
+    dfp0_dv = p[0] * q0dv - qdv.dot(p[1:]).T
+    dfp_dv = p[1:].dot(q0dv) + p[0] * qdv + dcross_dv
 
-    J[0, 4:7] = dp_dw_part1.squeeze()
-    J[1:4, 4:7] = dp_dw_part2
+    J[0, 4:7] = dt * dfp0_dv
+    J[1:4, 4:7] = dt * dfp_dv
 
-
-    # dqdw = f_qw(x, dt)
-    # print dqdw
-    # print f_qw_approx(x, dt)
-
+    J[0, 7:] = dt**2 / 2 * dfp0_dv
+    J[1:4, 7:] = dt**2 / 2 * dfp_dv
     return J
 
 
-def Jf_approx(x, dt, eps=1e-4):
-
-    J = np.zeros((x.size, x.size))
-    for i in xrange(x.size):
-        xp, xm = x.copy(), x.copy()
-        xp[i] += eps
-        xm[i] -= eps
-        J[:, i] = (f(xp, dt) - f(xm, dt)) / (2 * eps)
-    return J
+def pretty(row, width=16, decimals=8):
+    format_str = '%{}.{}f'.format(width, decimals)
+    return '|' + ' |'.join([format_str % f for f in row]) + ' |'
 
 
 if __name__ == '__main__':
@@ -106,14 +120,6 @@ if __name__ == '__main__':
     random.seed(0)
     x = random.randn(10)
     x[:4] = quat.normalize(x[:4])
-    J = Jf(x, dt)
-    Jd = Jf_approx(x, dt)
+    J = Jf(x, dt)#[1:4, 4:7]
+    Jd = fd_approx(f, x, dt)#[1:4, 4:7]
     print np.greater((J - Jd) ** 2, 1e-8).astype(int)
-    for i in xrange(x.size):
-        print list(Jd[i, :])
-
-
-    # print J[0:4, 4:7]
-    #
-    print J[1:4, 4:7]
-    print Jd[1:4, 4:7]
