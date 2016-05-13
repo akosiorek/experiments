@@ -2,19 +2,40 @@ import numpy as np
 
 
 def norm2(q):
-    return np.sqrt((q ** 2).sum())
+    return np.sqrt((q ** 2).sum(keepdims=True))
 
 
 def normalize(q):
     return q / norm2(q)
 
 
-def prod(q1, q2):
+def _prod(q1, q2):
+    assert q1.shape == q2.shape or (q1.shape[0] == q2.shape[0] and (q1.shape[1] == 1 or q2.shape[1] == 1))
+
     w1, v1 = q1[0], q1[1:]
     w2, v2 = q2[0], q2[1:]
     q = np.zeros_like(q1)
     q[0] = w1 * w2 - (v1 * v2).sum()
+
     q[1:] = w1 * v2 + w2 * v1 + np.cross(v1, v2)
+    return q
+
+
+def prod(q1, q2):
+    nq1, nq2 = q1.shape[1], q2.shape[1]
+    assert q1.shape == q2.shape or (q1.shape[0] == q2.shape[0] and (nq1 == 1 or nq2 == 1))
+    q = np.empty((q1.shape[0], max(nq1, nq2)))
+
+    if nq1 == nq2:
+        for i in xrange(q.shape[1]):
+            q[:, i] = _prod(q1[:, i], q2[:, i])
+    elif nq1 > nq2:
+        for i in xrange(q.shape[1]):
+            q[:, i] = _prod(q1[:, i], q2[:, 0])
+    else:
+        for i in xrange(q.shape[1]):
+            q[:, i] = _prod(q1[:, 0], q2[:, i])
+
     return q
 
 
@@ -31,10 +52,16 @@ def rot(p, q):
 
 
 def from_axisangle(p):
-    n, theta = p[:-1], p[-1] / 2
-    q = np.zeros_like(p)
-    q[0] = np.cos(theta)
-    q[1:] = np.sin(theta) * normalize(n)
+    if len(p) == 2:
+        n, theta = p
+    else:
+        n, theta = p[:-1], p[[-1]]
+
+    n = n.reshape(3, -1)
+    theta /= 2
+    q = np.zeros((4, theta.shape[-1]))
+    q[0, :] = np.cos(theta)
+    q[1:, :] = np.sin(theta) * normalize(n)
     return q
 
 
@@ -46,9 +73,29 @@ def to_axiangle(q):
     return v
 
 
+def to_euler(q):
+    e = np.zeros((3, q.shape[1]))
+    # q0, q1, q2, q3 = (q[i] for i in xrange(q.shape[0]))
+    q0, q1, q2, q3 = q
+    e[0, :] = np.arctan2(2 * (q0 * q1 + q2 * q3), 1 - 2 * (q1 ** 2 + q2 ** 2))
+    e[1, :] = np.arcsin(2 * (q0 * q2 - q3 * q1))
+    e[2, :] = np.arctan2(2 * (q0 * q3 + q1 * q2), 1 - 2 * (q2 ** 2 + q3 ** 2))
+
+    for i in xrange(1, e.shape[1]):
+        diff = e[:, i] - e[:, i-1]
+        for j in xrange(e.shape[0]):
+            if diff[j] > 1.8 * np.pi:
+                e[j, i] -= 2 * np.pi
+            elif diff[j] < -1.8 * np.pi:
+                e[j, i] += 2 * np.pi
+
+
+    return e
+
+
 def q_from_omega(w):
     theta = norm2(w)
-    return from_axisangle(np.concatenate((w, [theta])))
+    return from_axisangle(np.concatenate((w, theta)))
 
 
 def identity():
