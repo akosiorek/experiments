@@ -33,12 +33,14 @@ foo = theano.function([m, v, u], gaus.sample(), on_unused_input='warn')
 # print result.shape
 # print result
 
-n = int(1e6)
+n = int(1e4)
 X = np.zeros((dims ** 3, n))
 for i in xrange(n):
     X[:, i] = foo(mean, var, uu).flatten()
 
+print 'cov:'
 print np.cov(X)
-print X.mean(axis=1)
+print 'diag:', list(np.diag(np.cov(X)))
+print 'mean:', list(X.mean(axis=1))
 
 
