@@ -8,8 +8,11 @@ from breze.arch.construct.layer.kldivergence import kl_div
 from breze.learn.sgvb.movement_prior import ProbabilisticMovementPrimitive
 
 n_trials = 100
+n_repeats = 1
 
-n_bases = 10
+
+width = 0.025
+n_bases = 5
 n_timesteps = 160
 n_samples = 25
 n_dims = 49
@@ -31,7 +34,7 @@ mean = sample[:, :, :n_mean_par]
 var = sample[:, :, n_mean_par:] ** 2
 uu = mean
 
-pmp = ProbabilisticMovementPrimitive(n_bases, mean, var**2, uu)
+pmp = ProbabilisticMovementPrimitive(n_bases, mean, var**2, uu, width=width, eps=1e-5)
 
 diag = DiagGauss(dmean, dvar**2)
 
@@ -46,30 +49,53 @@ foo_kl = theano.function([dmean, dvar], kl)
 foo_grad = theano.function([dmean, dvar], grad_kl)
 
 
-kls = []
-grads = []
+def evaluate(trials, repeats_per_trial, batch_size):
+    kls = []
+    grads = []
 
-for _ in xrange(n_trials):
-# for _ in xrange(1):
-    dm, dv = (random.randn(n_timesteps, n_samples, n_dims).astype(floatx) for _ in xrange(2))
-    kl = foo_kl(dm, dv)
-    kls.append(kl)
-    grad = foo_grad(dm, dv)
-    grad = [g.mean(axis=(0, 1)) for g in grad]
-    grads.append(grad)
+    for _ in xrange(trials):
+        dm, dv = (random.randn(n_timesteps, batch_size, n_dims).astype(floatx) for _ in xrange(2))
+        kl = foo_kl(dm, dv)
+        grad = foo_grad(dm, dv)
+
+        for _ in xrange(repeats_per_trial - 1):
+            kl += foo_kl(dm, dv)
+            new_grad = foo_grad(dm, dv)
+            grad = [g + gg for g, gg in zip(grad, new_grad)]
+
+        kl /= n_repeats
+        grad = [g / n_repeats for g in grad]
+        grad = [g.mean(axis=(0, 1)) for g in grad]
+        kls.append(kl)
+        grads.append(grad)
+
+    kl_mean, kl_std = [f(kls) for f in (np.mean, np.std)]
+
+    grads = np.asarray(grads)
+    grad_norm = np.sqrt((grads**2).sum() / np.prod(grads.shape[:2]))
+    grad_std = np.std(grads, axis=0).max()
+
+    return kl_mean, kl_std, grad_norm, grad_std
 
 
-print
-print 'mean =', np.mean(kls)
-print 'std =', np.std(kls)
-print 'var =', np.var(kls)
+# print evaluate(n_trials, n_repeats, n_samples)
 
 
-grads = np.asarray(grads)
-print 'grad shape=', grads.shape
+batch_sizes = np.concatenate([[1], np.linspace(10, 100, 10)])
+vals = [evaluate(n_trials, n_repeats, bs) for bs in batch_sizes]
+vals = np.asarray(vals)
+print vals.shape
 
-v = np.var(grads, axis=0)
-print 'var shape=', v.shape
-print v
-print
-print v.max()
+from matplotlib import pyplot as plt
+
+fig = plt.figure()
+ax = fig.add_subplot(1, 1, 1)
+ax.plot(batch_sizes, vals[:, 3])
+ax.grid()
+ax.set_xlabel('batch size')
+ax.set_ylabel('gradient std')
+plt.show()
+
+print batch_sizes
+
+
