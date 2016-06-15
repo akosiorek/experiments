@@ -1,3 +1,5 @@
+"How does a gaussian change when passed through a nonlinearity like tanh?"
+
 import numpy as np
 from numpy import random
 from matplotlib import pyplot as plt

@@ -1,3 +1,5 @@
+"""Computes KL-divergence between diag gauss and a standard normal and plots a color map"""
+
 import numpy as np
 from numpy import random as rd
 from matplotlib import pyplot as plt

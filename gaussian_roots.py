@@ -1,3 +1,6 @@
+"""Roots of the gaussian polynomials for gaussian quadrature"""
+
+
 roots = {
 
 2: [

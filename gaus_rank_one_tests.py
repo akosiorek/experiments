@@ -1,3 +1,7 @@
+"""Tests theano implementation of sampling from a gaussian whose covariance matrix is a diagonal with rank-one
+correction. I + uu^T is factorized into FF^T for efficient sampling via location-scale transform."""
+
+
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 theano_flags = os.environ['THEANO_FLAGS'] if 'THEANO_FLAGS' in os.environ else ''

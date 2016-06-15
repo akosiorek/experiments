@@ -1,4 +1,5 @@
-
+"""How does a bound method behave when passed to another class. Does "self" mean the same thing as in the original
+class or does it mean the "self" of the new class?"""
 
 
 class A(object):
