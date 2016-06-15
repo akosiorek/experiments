@@ -119,11 +119,19 @@ def pretty(row, width=16, decimals=8):
 if __name__ == '__main__':
     dt = 0.5
     random.seed(0)
-    x = random.randn(10, 1)
-    x[:4] = quat.normalize(x[:4])
+    # x = random.randn(10, 1)
+    # x[:4] = quat.normalize(x[:4])
+    x = np.asarray([0.57996866097729827, 0.13155995106814494, 0.32178033684031654, 0.73673994488019956, 1.8675579901499673, -0.9772778798764109, 0.95008841752558948, -0.15135720829769789, -0.10321885179355784, 0.41059850193837227]).reshape(10, 1)
+
     J = Jf(x, dt)
     Jd = fd_approx(f, x, dt)
     print np.greater((J - Jd) ** 2, 1e-8).astype(int)
+
+    print J.flatten().tolist()
+
+    print dt
+    print list(x.flatten())
+    print list(f(x, dt).flatten())
 
     t = np.linspace(0, 2 * np.pi, 200)
     dt = t[1] - t[0]
@@ -146,7 +154,8 @@ if __name__ == '__main__':
     z = np.vstack((o_noisy, w_noisy, e_noisy))  # noisy measurements
 
     P = np.zeros((x.shape[0], x.shape[0]))   # initial state coviarance, it's zero since we know the position and velocity=0
-    Q = np.eye(x.shape[0]) * 0.1  # enviornment noise covariance
+    # Q = np.eye(x.shape[0]) * 0.01  # enviornment noise covariance
+    Q = np.eye(x.shape[0]) * 0.002  # enviornment noise covariance
     H = np.eye(x.shape[0])  # sensor and measurement space are the same
     R = np.diag([o_sigma] * o.shape[0] + [w_sigma] * w.shape[0] + [e_sigma] * e.shape[0])   # measurement noise covariance matrix
 
@@ -160,17 +169,18 @@ if __name__ == '__main__':
     for i in xrange(1, len(t)):
         # prediction
         F = Jf(x, dt)
-        x = F.dot(x)
-        x[:o.shape[0]] = quat.normalize(x[:o.shape[0]])
+        x = f(x, dt)
+        # x = F.dot(x)
         P = F.dot(P).dot(F.T) + Q
 
         o_prediction[:, [i]] = extract(x)[0]
 
         # estimate
         correction = z[:, [i]] - H.dot(x)
-        K = P.dot(H.T) * np.linalg.inv(H.dot(P).dot(H.T) + R)
+        K = P.dot(H.T).dot(np.linalg.inv(H.dot(P).dot(H.T) + R))
 
         x = x + K.dot(correction)
+        x[:o.shape[0]] = quat.normalize(x[:o.shape[0]])
         P = P - K.dot(H).dot(P)
         o_estimate[:, [i]] = extract(x)[0]
 
@@ -182,7 +192,7 @@ if __name__ == '__main__':
     print 'prediction error:', mse_prediction
     print 'estimate error:', mse_estimate
 
-    fig, axes = plt.subplots(o.shape[0], 1, sharex=True, sharey=True)
+    fig, axes = plt.subplots(o.shape[0], 1, sharex=True, sharey=False)
 
     fig.tight_layout()
     axes[0].set_title('MSE: Noise={:.3f}, Estimate={:.3f}'.format(mse_noise, mse_estimate))

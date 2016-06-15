@@ -88,9 +88,19 @@ def to_euler(q):
                 e[j, i] -= 2 * np.pi
             elif diff[j] < -1.8 * np.pi:
                 e[j, i] += 2 * np.pi
-
-
     return e
+
+
+def from_euler(e):
+    qx, qy, qz = np.zeros((3, 4, e.shape[-1]))
+
+    qx[0, :] = np.cos(e[0, :] / 2)
+    qx[1, :] = np.sin(e[0, :] / 2)
+    qy[0, :] = np.cos(e[1, :] / 2)
+    qy[2, :] = np.sin(e[1, :] / 2)
+    qz[0, :] = np.cos(e[2, :] / 2)
+    qz[3, :] = np.sin(e[2, :] / 2)
+    return prod(qz, prod(qy, qx))
 
 
 def q_from_omega(w):
